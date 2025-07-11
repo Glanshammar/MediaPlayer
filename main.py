@@ -4,6 +4,7 @@ MediaPlayer - A simple media player application built with PyQt6
 """
 
 import sys
+import time
 from pathlib import Path
 from typing import Optional, Union, cast
 
@@ -25,7 +26,7 @@ from PyQt6.QtWidgets import (
     QMenu,
     QMenuBar
 )
-from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
+from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput, QMediaFormat
 from PyQt6.QtMultimediaWidgets import QVideoWidget
 
 
@@ -42,15 +43,23 @@ class MediaPlayer(QMainWindow):
         # Track fullscreen state
         self.is_fullscreen = False
         
+        # Track current position for proper resume
+        self.current_position = 0
+        
+        # Create media player with proper settings
         self.media_player = QMediaPlayer()
         self.audio_output = QAudioOutput()
         self.media_player.setAudioOutput(self.audio_output)
+        
+        # Set the audio buffer size for better sync
+        # self.audio_output.setBufferSize(2048)  # Larger buffer for smoother playback
         
         # Connect error handling
         self.media_player.errorOccurred.connect(self.handle_error)
         
         # Create video widget
         self.video_widget = QVideoWidget()
+        self.video_widget.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
         self.media_player.setVideoOutput(self.video_widget)
         
         # Create UI elements
@@ -232,7 +241,27 @@ class MediaPlayer(QMainWindow):
 
     def play(self) -> None:
         """Start playing the media."""
+        current_state = self.media_player.playbackState()
+        
+        # If we're resuming from a pause
+        if current_state == QMediaPlayer.PlaybackState.PausedState:
+            # Store current position before resuming
+            position = self.media_player.position()
+            
+            # Reset to slightly before current position to ensure proper sync
+            if position > 100:  # Don't do this if we're near the start
+                # Stop first to reset buffers
+                self.media_player.stop()
+                
+                # Small delay to ensure proper reset
+                QApplication.processEvents()
+                
+                # Set position and play
+                self.media_player.setPosition(position)
+                
+        # Play the media
         self.media_player.play()
+        
         style = self.style()
         if style:
             self.play_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_MediaPause))
@@ -240,7 +269,10 @@ class MediaPlayer(QMainWindow):
 
     def pause(self) -> None:
         """Pause the media playback."""
+        # Store current position before pausing
+        self.current_position = self.media_player.position()
         self.media_player.pause()
+        
         style = self.style()
         if style:
             self.play_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
@@ -248,7 +280,9 @@ class MediaPlayer(QMainWindow):
 
     def stop(self) -> None:
         """Stop the media playback."""
+        self.current_position = 0
         self.media_player.stop()
+        
         style = self.style()
         if style:
             self.play_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
@@ -307,6 +341,9 @@ class MediaPlayer(QMainWindow):
 
     def position_changed(self, position: int) -> None:
         """Update the position slider and label."""
+        # Store current position for proper resuming
+        self.current_position = position
+        
         # Update slider without triggering events
         self.position_slider.blockSignals(True)
         self.position_slider.setValue(position)
@@ -334,7 +371,20 @@ class MediaPlayer(QMainWindow):
 
     def set_position(self, position: int) -> None:
         """Set the playback position."""
+        current_state = self.media_player.playbackState()
+        is_playing = (current_state == QMediaPlayer.PlaybackState.PlayingState)
+        
+        # If currently playing, pause first for better sync
+        if is_playing:
+            self.media_player.pause()
+        
+        # Set the position
         self.media_player.setPosition(position)
+        self.current_position = position
+        
+        # Resume if was playing
+        if is_playing:
+            self.media_player.play()
 
     def set_volume(self, volume: int) -> None:
         """Set the audio volume."""
