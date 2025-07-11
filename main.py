@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import Optional, Union, cast
 
-from PyQt6.QtCore import QUrl, Qt, QTime
+from PyQt6.QtCore import QUrl, Qt, QTime, QEvent, QObject
 from PyQt6.QtGui import QIcon, QAction, QKeyEvent
 from PyQt6.QtWidgets import (
     QApplication, 
@@ -67,6 +67,9 @@ class MediaPlayer(QMainWindow):
         
         # Setup connections
         self.setup_connections()
+        
+        # Install event filter to capture all key events
+        self.installEventFilter(self)
 
     def setup_ui(self) -> None:
         """Set up the user interface."""
@@ -136,6 +139,12 @@ class MediaPlayer(QMainWindow):
         
         # Create toolbar
         self.create_toolbar()
+        
+        # Set strong focus policy for the main window
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        
+        # Set focus to main window
+        self.setFocus()
 
     def create_menu_bar(self) -> None:
         """Create the application menu bar."""
@@ -173,6 +182,23 @@ class MediaPlayer(QMainWindow):
         view_menu.addAction(fullscreen_action)
         self.fullscreen_action = fullscreen_action
         
+        # Playback menu
+        playback_menu = menu_bar.addMenu("&Playback")
+        if not playback_menu:
+            return
+            
+        # Skip forward action
+        skip_forward_action = QAction("Skip &Forward 10 Seconds", self)
+        skip_forward_action.setShortcut("Right")
+        skip_forward_action.triggered.connect(self.skip_forward)
+        playback_menu.addAction(skip_forward_action)
+        
+        # Skip backward action
+        skip_backward_action = QAction("Skip &Backward 10 Seconds", self)
+        skip_backward_action.setShortcut("Left")
+        skip_backward_action.triggered.connect(self.skip_backward)
+        playback_menu.addAction(skip_backward_action)
+        
         # Help menu
         help_menu = menu_bar.addMenu("&Help")
         if not help_menu:
@@ -201,6 +227,16 @@ class MediaPlayer(QMainWindow):
         fullscreen_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_TitleBarMaxButton), "Fullscreen", self)
         fullscreen_action.triggered.connect(self.toggle_fullscreen)
         self.toolbar.addAction(fullscreen_action)
+        
+        # Add skip backward button
+        skip_backward_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_MediaSkipBackward), "Skip Backward", self)
+        skip_backward_action.triggered.connect(self.skip_backward)
+        self.toolbar.addAction(skip_backward_action)
+        
+        # Add skip forward button
+        skip_forward_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_MediaSkipForward), "Skip Forward", self)
+        skip_forward_action.triggered.connect(self.skip_forward)
+        self.toolbar.addAction(skip_forward_action)
 
     def setup_connections(self) -> None:
         """Set up signal and slot connections."""
@@ -266,6 +302,9 @@ class MediaPlayer(QMainWindow):
         if style:
             self.play_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_MediaPause))
         self.play_button.setToolTip("Pause")
+        
+        # Set focus to main window for keyboard shortcuts
+        self.setFocus()
 
     def pause(self) -> None:
         """Pause the media playback."""
@@ -311,14 +350,53 @@ class MediaPlayer(QMainWindow):
         if hasattr(self, 'fullscreen_action'):
             self.fullscreen_action.setChecked(False)
 
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        """Filter events for all child objects."""
+        if event.type() == QEvent.Type.KeyPress:
+            key_event = cast(QKeyEvent, event)
+            # Handle arrow key presses
+            if key_event.key() == Qt.Key.Key_Right:
+                self.skip_forward()
+                self.status_bar.showMessage("Skipped forward 10 seconds", 2000)
+                return True
+            elif key_event.key() == Qt.Key.Key_Left:
+                self.skip_backward()
+                self.status_bar.showMessage("Skipped backward 10 seconds", 2000)
+                return True
+                
+        # Let parent class handle the rest
+        return super().eventFilter(obj, event)
+
     def keyPressEvent(self, event: QKeyEvent) -> None:
         """Handle key press events."""
         if event.key() == Qt.Key.Key_F:
             self.toggle_fullscreen()
         elif event.key() == Qt.Key.Key_Escape and self.is_fullscreen:
             self.exit_fullscreen()
+        elif event.key() == Qt.Key.Key_Right:
+            self.skip_forward()
+            self.status_bar.showMessage("Skipped forward 10 seconds", 2000)
+        elif event.key() == Qt.Key.Key_Left:
+            self.skip_backward()
+            self.status_bar.showMessage("Skipped backward 10 seconds", 2000)
         else:
             super().keyPressEvent(event)
+            
+    def skip_forward(self) -> None:
+        """Skip forward 10 seconds."""
+        current_position = self.media_player.position()
+        duration = self.media_player.duration()
+        if duration > 0:  # Make sure we have media loaded
+            new_position = min(current_position + 10000, duration)
+            self.set_position(new_position)
+            print(f"Skipped forward to {new_position}ms")
+        
+    def skip_backward(self) -> None:
+        """Skip backward 10 seconds."""
+        current_position = self.media_player.position()
+        new_position = max(0, current_position - 10000)
+        self.set_position(new_position)
+        print(f"Skipped backward to {new_position}ms")
 
     def playback_state_changed(self, state: QMediaPlayer.PlaybackState) -> None:
         """Handle playback state changes."""
@@ -330,6 +408,8 @@ class MediaPlayer(QMainWindow):
             self.play_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_MediaPause))
             self.play_button.setToolTip("Pause")
             self.status_bar.showMessage("Playing")
+            # Set focus to main window for keyboard shortcuts
+            self.setFocus()
         elif state == QMediaPlayer.PlaybackState.PausedState:
             self.play_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
             self.play_button.setToolTip("Play")

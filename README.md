@@ -51,6 +51,8 @@ python main.py
 - Adjust volume using the volume slider
 - Press F to toggle fullscreen mode
 - Press Escape to exit fullscreen mode
+- Press Right Arrow to skip forward 10 seconds
+- Press Left Arrow to skip backward 10 seconds
 - Press Ctrl+Q to exit the application
 
 ## License
