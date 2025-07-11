@@ -62,6 +62,9 @@ class MediaPlayer(QMainWindow):
         self.video_widget.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
         self.media_player.setVideoOutput(self.video_widget)
         
+        # Install event filter on video widget to handle double clicks
+        self.video_widget.installEventFilter(self)
+        
         # Create UI elements
         self.setup_ui()
         
@@ -431,6 +434,10 @@ class MediaPlayer(QMainWindow):
                 self.skip_backward()
                 self.status_bar.showMessage("Skipped backward 10 seconds", 2000)
                 return True
+        # Handle double clicks on video widget
+        elif event.type() == QEvent.Type.MouseButtonDblClick and obj is self.video_widget:
+            self.toggle_fullscreen()
+            return True
                 
         # Let parent class handle the rest
         return super().eventFilter(obj, event)
@@ -585,7 +592,7 @@ class MediaPlayer(QMainWindow):
         event.accept()
 
 
-def main() -> None:
+if __name__ == "__main__":
     """Main application entry point."""
     try:
         app = QApplication(sys.argv)
@@ -601,7 +608,3 @@ def main() -> None:
     except Exception as e:
         print(f"Fatal error: {e}", file=sys.stderr)
         sys.exit(1)
-
-
-if __name__ == "__main__":
-    main() 
