@@ -447,6 +447,9 @@ class MediaPlayer(QMainWindow):
         elif event.key() == Qt.Key.Key_Left:
             self.skip_backward()
             self.status_bar.showMessage("Skipped backward 10 seconds", 2000)
+        elif event.key() == Qt.Key.Key_Space:
+            self.toggle_playback()
+            self.status_bar.showMessage("Play/Pause toggled", 2000)
         else:
             super().keyPressEvent(event)
             
