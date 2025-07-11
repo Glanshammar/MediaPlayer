@@ -43,6 +43,11 @@ Run the application with:
 python main.py
 ```
 
+Build the application with:
+```
+nuitka --standalone --output-filename=MediaPlayer main.py
+```
+
 ### Controls
 
 - Click "Open" button or press Ctrl+O to open a media file

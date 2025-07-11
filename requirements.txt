@@ -1,3 +1,6 @@
-PyQt6==6.5.0
-PyQt6-Qt6==6.5.0
-PyQt6-sip==13.5.1 
+Nuitka==2.7.12
+ordered-set==4.1.0
+PyQt6==6.9.1
+PyQt6-Qt6==6.9.1
+PyQt6_sip==13.10.2
+zstandard==0.23.0
