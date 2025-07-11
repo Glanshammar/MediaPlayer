@@ -336,7 +336,42 @@ class MediaPlayer(QMainWindow):
 
     def enter_fullscreen(self) -> None:
         """Enter true fullscreen mode."""
-        # Simply switch to fullscreen state
+        # Save current visibility states
+        self.ui_states_before_fullscreen = {
+            'controls_visible': all(w.isVisible() for w in [self.play_button, self.stop_button, self.position_slider]),
+            'toolbar_visible': self.toolbar.isVisible() if hasattr(self, 'toolbar') else False
+        }
+        
+        # Hide all UI elements
+        if hasattr(self, 'toolbar'):
+            self.toolbar.hide()
+        
+        # Hide controls
+        for i in range(self.controls_layout.count()):
+            item = self.controls_layout.itemAt(i)
+            if item is not None:
+                widget = item.widget()
+                if widget is not None:
+                    widget.hide()
+                
+        # Hide status bar and menu bar
+        status_bar = self.statusBar()
+        if status_bar is not None:
+            status_bar.hide()
+            
+        menu_bar = self.menuBar()
+        if menu_bar is not None:
+            menu_bar.hide()
+            
+        # Add video widget directly to the main layout as only child
+        self.video_widget.setParent(None)
+        for i in range(self.main_layout.count()):
+            self.main_layout.removeItem(self.main_layout.itemAt(0))
+        
+        self.main_layout.addWidget(self.video_widget)
+        self.video_widget.setFocus()
+        
+        # Switch to fullscreen state
         self.showFullScreen()
         self.is_fullscreen = True
         if hasattr(self, 'fullscreen_action'):
@@ -344,8 +379,41 @@ class MediaPlayer(QMainWindow):
         
     def exit_fullscreen(self) -> None:
         """Exit true fullscreen mode."""
-        # Return to normal window state
+        # Return to normal window state first
         self.showNormal()
+        
+        # Rebuild layout structure
+        self.video_widget.setParent(None)
+        for i in range(self.main_layout.count()):
+            self.main_layout.removeItem(self.main_layout.itemAt(0))
+            
+        # Re-add video widget
+        self.main_layout.addWidget(self.video_widget)
+        
+        # Re-add controls layout
+        self.main_layout.addLayout(self.controls_layout)
+        
+        # Show all controls
+        for i in range(self.controls_layout.count()):
+            item = self.controls_layout.itemAt(i)
+            if item is not None:
+                widget = item.widget()
+                if widget is not None and self.ui_states_before_fullscreen.get('controls_visible', True):
+                    widget.show()
+        
+        # Show toolbar if it was visible before
+        if hasattr(self, 'toolbar') and self.ui_states_before_fullscreen.get('toolbar_visible', True):
+            self.toolbar.show()
+            
+        # Show status bar and menu bar
+        status_bar = self.statusBar()
+        if status_bar is not None:
+            status_bar.show()
+            
+        menu_bar = self.menuBar()
+        if menu_bar is not None:
+            menu_bar.show()
+        
         self.is_fullscreen = False
         if hasattr(self, 'fullscreen_action'):
             self.fullscreen_action.setChecked(False)
