@@ -125,8 +125,8 @@ class MediaPlayer(QMainWindow):
         # Volume slider
         self.volume_slider = QSlider(Qt.Orientation.Horizontal)
         self.volume_slider.setRange(0, 100)
-        self.volume_slider.setValue(70)  # Default volume
-        self.audio_output.setVolume(0.7)
+        self.volume_slider.setValue(100)  # Default volume
+        self.audio_output.setVolume(1.0)
         volume_layout.addWidget(self.volume_slider)
         
         self.controls_layout.addLayout(volume_layout)
@@ -434,6 +434,12 @@ class MediaPlayer(QMainWindow):
                 self.skip_backward()
                 self.status_bar.showMessage("Skipped backward 10 seconds", 2000)
                 return True
+            elif key_event.key() == Qt.Key.Key_Up:
+                self.increase_volume()
+                return True
+            elif key_event.key() == Qt.Key.Key_Down:
+                self.decrease_volume()
+                return True
         # Handle double clicks on video widget
         elif event.type() == QEvent.Type.MouseButtonDblClick and obj is self.video_widget:
             self.toggle_fullscreen()
@@ -454,6 +460,10 @@ class MediaPlayer(QMainWindow):
         elif event.key() == Qt.Key.Key_Left:
             self.skip_backward()
             self.status_bar.showMessage("Skipped backward 10 seconds", 2000)
+        elif event.key() == Qt.Key.Key_Up:
+            self.increase_volume()
+        elif event.key() == Qt.Key.Key_Down:
+            self.decrease_volume()
         elif event.key() == Qt.Key.Key_Space:
             self.toggle_playback()
             self.status_bar.showMessage("Play/Pause toggled", 2000)
@@ -590,6 +600,20 @@ class MediaPlayer(QMainWindow):
         # Stop playback before closing
         self.media_player.stop()
         event.accept()
+
+    def increase_volume(self) -> None:
+        """Increase volume by 5%."""
+        current_volume = self.volume_slider.value()
+        new_volume = min(100, current_volume + 5)
+        self.volume_slider.setValue(new_volume)
+        self.status_bar.showMessage(f"Volume: {new_volume}%", 2000)
+        
+    def decrease_volume(self) -> None:
+        """Decrease volume by 5%."""
+        current_volume = self.volume_slider.value()
+        new_volume = max(0, current_volume - 5)
+        self.volume_slider.setValue(new_volume)
+        self.status_bar.showMessage(f"Volume: {new_volume}%", 2000)
 
 
 if __name__ == "__main__":
