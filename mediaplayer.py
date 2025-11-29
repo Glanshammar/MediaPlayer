@@ -18,9 +18,7 @@ from PyQt6.QtWidgets import (
 )
 from pathlib import Path
 from typing import List, cast
-import yt_dlp
-import hashlib
-import threading
+from downloadworker import DownloadWorker
 
 
 class MediaPlayer(QMainWindow):
@@ -57,8 +55,6 @@ class MediaPlayer(QMainWindow):
         self.create_playlist_menu()
         self.settings = QSettings("MediaPlayer", "MediaPlayer")
         self.load_settings()
-
-        # Video download related attributes
         self.pending_download_path = None
         self.pending_download_url = None
 
@@ -185,13 +181,13 @@ class MediaPlayer(QMainWindow):
             return
 
         # Skip forward action
-        skip_forward_action = QAction("Skip &Forward 10 Seconds", self)
+        skip_forward_action = QAction("Skip &Forward 5 Seconds", self)
         skip_forward_action.setShortcut("Right")
         skip_forward_action.triggered.connect(self.skip_forward)
         playback_menu.addAction(skip_forward_action)
 
         # Skip backward action
-        skip_backward_action = QAction("Skip &Backward 10 Seconds", self)
+        skip_backward_action = QAction("Skip &Backward 5 Seconds", self)
         skip_backward_action.setShortcut("Left")
         skip_backward_action.triggered.connect(self.skip_backward)
         playback_menu.addAction(skip_backward_action)
@@ -277,7 +273,6 @@ class MediaPlayer(QMainWindow):
             print(f"Media status: {status_messages[status]}")  # Debug info
 
     def open_file(self) -> None:
-        """Open a media file with better error handling."""
         try:
             file_path, _ = QFileDialog.getOpenFileName(
                 self,
@@ -300,84 +295,30 @@ class MediaPlayer(QMainWindow):
             self.status_bar.showMessage(f"Error opening file: {str(e)}")
 
     def open_url(self) -> None:
-        """Open a YouTube or other online video URL."""
         url, ok = QInputDialog.getText(
             self,
             "Open URL",
-            "Enter video URL (YouTube, etc.):"
+            "Enter video URL:"
         )
 
         if ok and url:
-            self.status_bar.showMessage("Downloading video... This may take a moment.")
+            self.status_bar.showMessage("Downloading video...")
 
             # Create downloads directory if it doesn't exist
             download_dir = Path.home() / "MediaPlayer"
             download_dir.mkdir(exist_ok=True)
 
-            # Generate filename from URL
-            url_hash = hashlib.md5(url.encode()).hexdigest()[:10]
-            output_path = download_dir / f"video_{url_hash}.%(ext)s"
+            # Start download in QThread
+            self.download_thread = DownloadWorker(url, str(download_dir))
+            self.download_thread.finished.connect(self.on_download_finished)
+            self.download_thread.start()
 
-            try:
-                # Download in a separate thread to avoid blocking UI
-                thread = threading.Thread(
-                    target=self.download_video_threaded,
-                    args=(url, str(output_path))
-                )
-                thread.daemon = True
-                thread.start()
-
-                # Store the path for when download completes
-                self.pending_download_path = output_path
-                self.pending_download_url = url
-
-            except Exception as e:
-                self.status_bar.showMessage(f"Download error: {str(e)}")
-
-    def download_video(self, url: str, output_path: str) -> None:
-        """Download video using yt-dlp."""
-        ydl_opts = {
-            'outtmpl': output_path,
-            'format': 'best',  # choose the best available quality
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
-
-    def download_video_threaded(self, url: str, output_path: str) -> None:
-        """Download video in a separate thread."""
-        try:
-            self.download_video(url, output_path)
-
-            # Use QTimer to safely update UI from main thread
-            QTimer.singleShot(0, lambda: self.on_download_complete(output_path))
-
-        except Exception as e:
-            QTimer.singleShot(0, lambda: self.status_bar.showMessage(f"Download failed: {str(e)}"))
-
-    def on_download_complete(self, file_path: str) -> None:
-        """Handle completed download and play automatically."""
-        # Since we used %(ext)s, we need to find the actual file
-        # Remove the %(ext)s and look for files with the same base name
-        base_path = file_path.replace('.%(ext)s', '')
-        actual_files = list(Path(base_path).parent.glob(Path(base_path).name + '.*'))
-
-        if actual_files:
-            actual_file = actual_files[0]  # Take the first matching file
-            self.media_player.setSource(QUrl.fromLocalFile(str(actual_file)))
-            self.status_bar.showMessage("Loaded downloaded video - playing automatically")
-
-            # Small delay to ensure media is properly loaded before playing
-            QTimer.singleShot(100, self.play_after_download)
+    def on_download_finished(self, success: bool, message: str):
+        if success:
+            self.status_bar.showMessage(message)
         else:
-            self.status_bar.showMessage("Downloaded file not found")
-
-    def play_after_download(self) -> None:
-        """Play the downloaded video after a brief delay to ensure loading."""
-        if not self.media_player.source().isEmpty():
-            self.play()
-        else:
-            # If still not loaded, try again after another short delay
-            QTimer.singleShot(200, self.play_after_download)
+            self.status_bar.showMessage(message)
+            QMessageBox.warning(self, "Download Failed", message)
 
     def toggle_playback(self) -> None:
         """Toggle between play and pause."""
