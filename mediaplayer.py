@@ -394,7 +394,9 @@ class MediaPlayer(QMainWindow):
     def enter_fullscreen(self) -> None:
         self.ui_states_before_fullscreen = {
             'controls_visible': all(w.isVisible() for w in [self.play_button, self.stop_button, self.position_slider]),
-            'toolbar_visible': self.toolbar.isVisible() if hasattr(self, 'toolbar') else False
+            'toolbar_visible': self.toolbar.isVisible() if hasattr(self, 'toolbar') else False,
+            'statusbar_visible': self.statusBar().isVisible() if self.statusBar() else False,
+            'menubar_visible': self.menuBar().isVisible() if self.menuBar() else False
         }
 
         if hasattr(self, 'toolbar'):
@@ -415,12 +417,6 @@ class MediaPlayer(QMainWindow):
         if menu_bar is not None:
             menu_bar.hide()
 
-        self.video_widget.setParent(None)
-        for i in range(self.main_layout.count()):
-            self.main_layout.removeItem(self.main_layout.itemAt(0))
-
-        self.main_layout.addWidget(self.video_widget)
-        self.video_widget.setFocus()
         self.showFullScreen()
         self.is_fullscreen = True
         if hasattr(self, 'fullscreen_action'):
@@ -428,12 +424,7 @@ class MediaPlayer(QMainWindow):
 
     def exit_fullscreen(self) -> None:
         self.showNormal()
-        self.video_widget.setParent(None)
-        for i in range(self.main_layout.count()):
-            self.main_layout.removeItem(self.main_layout.itemAt(0))
-
-        self.main_layout.addWidget(self.video_widget)
-        self.main_layout.addLayout(self.controls_layout)
+        self.is_fullscreen = False
 
         for i in range(self.controls_layout.count()):
             item = self.controls_layout.itemAt(i)
@@ -446,14 +437,13 @@ class MediaPlayer(QMainWindow):
             self.toolbar.show()
 
         status_bar = self.statusBar()
-        if status_bar is not None:
+        if status_bar is not None and self.ui_states_before_fullscreen.get('statusbar_visible', True):
             status_bar.show()
 
         menu_bar = self.menuBar()
-        if menu_bar is not None:
+        if menu_bar is not None and self.ui_states_before_fullscreen.get('menubar_visible', True):
             menu_bar.show()
 
-        self.is_fullscreen = False
         if hasattr(self, 'fullscreen_action'):
             self.fullscreen_action.setChecked(False)
 
@@ -462,11 +452,11 @@ class MediaPlayer(QMainWindow):
             key_event = cast(QKeyEvent, event)
             if key_event.key() == Qt.Key.Key_Right:
                 self.skip_forward()
-                self.status_bar.showMessage("Skipped forward 10 seconds", 2000)
+                self.status_bar.showMessage("Skipped forward 5 seconds", 2000)
                 return True
             elif key_event.key() == Qt.Key.Key_Left:
                 self.skip_backward()
-                self.status_bar.showMessage("Skipped backward 10 seconds", 2000)
+                self.status_bar.showMessage("Skipped backward 5 seconds", 2000)
                 return True
             elif key_event.key() == Qt.Key.Key_Up:
                 self.increase_volume()
