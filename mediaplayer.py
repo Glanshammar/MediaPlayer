@@ -394,6 +394,7 @@ class MediaPlayer(QMainWindow):
     def enter_fullscreen(self) -> None:
         self.ui_states_before_fullscreen = {
             'controls_visible': all(w.isVisible() for w in [self.play_button, self.stop_button, self.position_slider]),
+            'volume_layout_visible': self.volume_button.isVisible() and self.volume_slider.isVisible(),
             'toolbar_visible': self.toolbar.isVisible() if hasattr(self, 'toolbar') else False,
             'statusbar_visible': self.statusBar().isVisible() if self.statusBar() else False,
             'menubar_visible': self.menuBar().isVisible() if self.menuBar() else False
@@ -408,6 +409,11 @@ class MediaPlayer(QMainWindow):
                 widget = item.widget()
                 if widget is not None:
                     widget.hide()
+
+        if self.volume_button:
+            self.volume_button.hide()
+        if self.volume_slider:
+            self.volume_slider.hide()
 
         status_bar = self.statusBar()
         if status_bar is not None:
@@ -432,6 +438,12 @@ class MediaPlayer(QMainWindow):
                 widget = item.widget()
                 if widget is not None and self.ui_states_before_fullscreen.get('controls_visible', True):
                     widget.show()
+
+        if self.ui_states_before_fullscreen.get('volume_layout_visible', True):
+            if self.volume_button:
+                self.volume_button.show()
+            if self.volume_slider:
+                self.volume_slider.show()
 
         if hasattr(self, 'toolbar') and self.ui_states_before_fullscreen.get('toolbar_visible', True):
             self.toolbar.show()
