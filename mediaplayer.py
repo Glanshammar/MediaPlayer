@@ -150,10 +150,13 @@ class MediaPlayer(QMainWindow):
         open_action.triggered.connect(self.open_file)
         file_menu.addAction(open_action)
 
-        download_action = QAction("Download Video", self)
-        download_action.setShortcut("Ctrl+U")
-        download_action.triggered.connect(self.download_video)
-        file_menu.addAction(download_action)
+        download_action_video = QAction("Download Video", self)
+        download_action_video.setShortcut("Ctrl+U")
+        download_action_video.triggered.connect(self.download_video)
+        file_menu.addAction(download_action_video)
+        download_action_audio = QAction("Download Audio", self)
+        download_action_audio.setShortcut("Ctrl+alt+U")
+        download_action_audio.triggered.connect(lambda checked, fmt="audio": self.download_video(fmt))
 
         exit_action = QAction(QIcon.fromTheme("application-exit"), "E&xit", self)
         exit_action.setShortcut("Ctrl+Q")
@@ -247,9 +250,15 @@ class MediaPlayer(QMainWindow):
         open_action.triggered.connect(self.open_file)
         self.toolbar.addAction(open_action)
 
-        download_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_ToolBarVerticalExtensionButton), "Download Video", self)
-        download_action.triggered.connect(self.download_video)
-        self.toolbar.addAction(download_action)
+        download_action_video = QAction(style.standardIcon(QStyle.StandardPixmap.SP_ToolBarVerticalExtensionButton),
+                                  "Download Video", self)
+        download_action_video.triggered.connect(self.download_video)
+        self.toolbar.addAction(download_action_video)
+
+        download_action_audio = QAction(style.standardIcon(QStyle.StandardPixmap.SP_ToolBarVerticalExtensionButton),
+                                  "Download Audio", self)
+        download_action_audio.triggered.connect(lambda checked, fmt="audio": self.download_video(fmt))
+        self.toolbar.addAction(download_action_audio)
 
         fullscreen_action = QAction(style.standardIcon(QStyle.StandardPixmap.SP_TitleBarMaxButton), "Fullscreen", self)
         fullscreen_action.triggered.connect(self.toggle_fullscreen)
@@ -342,7 +351,7 @@ class MediaPlayer(QMainWindow):
         except Exception as e:
             self.status_bar.showMessage(f"Error opening file: {str(e)}")
 
-    def download_video(self) -> None:
+    def download_video(self, media_format="video") -> None:
         url, ok = QInputDialog.getText(
             self,
             "Download video",
@@ -354,7 +363,7 @@ class MediaPlayer(QMainWindow):
             download_dir = Path.home() / "MediaPlayer"
             download_dir.mkdir(exist_ok=True)
 
-            self.download_thread = DownloadWorker(url, str(download_dir))
+            self.download_thread = DownloadWorker(url, str(download_dir), media_format)
             self.download_thread.finished.connect(self.on_download_finished)
             self.download_thread.start()
 
