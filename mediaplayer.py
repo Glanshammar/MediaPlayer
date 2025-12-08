@@ -1,5 +1,5 @@
 from PyQt6.QtCore import Qt, QEvent, QObject, QSettings, QTimer
-from PyQt6.QtGui import QIcon, QAction, QKeyEvent
+from PyQt6.QtGui import QIcon, QAction, QKeyEvent, QActionGroup
 from PyQt6.QtMultimediaWidgets import QVideoWidget
 from PyQt6.QtWidgets import (
     QMainWindow,
@@ -14,7 +14,8 @@ from PyQt6.QtWidgets import (
     QStatusBar,
     QToolBar,
     QInputDialog,
-    QMessageBox
+    QMessageBox,
+    QMenu
 )
 from pathlib import Path
 from typing import cast
@@ -207,6 +208,33 @@ class MediaPlayer(QMainWindow):
         about_action.triggered.connect(self.about)
         help_menu.addAction(about_action)
 
+        subtitles_menu = menu_bar.addMenu("&Subtitles")
+        if not subtitles_menu:
+            return
+
+        load_subtitle_action = QAction("&Load Subtitle File...", self)
+        load_subtitle_action.setShortcut("Ctrl+S")
+        load_subtitle_action.triggered.connect(self.load_subtitle_file)
+        subtitles_menu.addAction(load_subtitle_action)
+
+        remove_subtitle_action = QAction("&Remove Subtitle", self)
+        remove_subtitle_action.setShortcut("Ctrl+Shift+S")
+        remove_subtitle_action.triggered.connect(self.remove_subtitle)
+        subtitles_menu.addAction(remove_subtitle_action)
+
+        subtitles_menu.addSeparator()
+
+        self.subtitle_track_menu = subtitles_menu.addMenu("&Track")
+        self.no_subtitle_action = QAction("&No Subtitle", self)
+        self.no_subtitle_action.setCheckable(True)
+        self.no_subtitle_action.setChecked(True)
+        self.no_subtitle_action.triggered.connect(lambda: self.set_subtitle_track(-1))
+        self.subtitle_track_menu.addAction(self.no_subtitle_action)
+
+        self.subtitle_track_group = QActionGroup(self)
+        self.subtitle_track_group.setExclusive(True)
+        self.no_subtitle_action.setActionGroup(self.subtitle_track_group)
+
     def create_toolbar(self) -> None:
         self.toolbar = QToolBar("Media Controls")
         self.addToolBar(self.toolbar)
@@ -350,8 +378,24 @@ class MediaPlayer(QMainWindow):
 
             media = self.vlc_instance.media_new(file_path)
             self.vlc_player.set_media(media)
+
+            self.current_subtitle_track = -1
+            self.external_subtitle_path = None
+            self.subtitle_delay = 0
+
+            self.clear_subtitle_track_actions()
+
+            self.no_subtitle_action = QAction("No Subtitle", self)
+            self.no_subtitle_action.setCheckable(True)
+            self.no_subtitle_action.setChecked(True)
+            self.no_subtitle_action.triggered.connect(lambda: self.set_subtitle_track(-1))
+            self.no_subtitle_action.setActionGroup(self.subtitle_track_group)
+            self.subtitle_track_menu.addAction(self.no_subtitle_action)
+
             self.position_slider.setValue(0)
             self.position_label.setText("Loaded media successfully")
+            self.status_bar.showMessage(f"Loaded: {Path(file_path).name}")
+            QTimer.singleShot(500, self.detect_embedded_subtitles)
         except Exception as e:
             QMessageBox.critical(self, "Load Error", f"Failed to load media:\n{str(e)}")
 
@@ -622,6 +666,180 @@ class MediaPlayer(QMainWindow):
             self.vlc_player.set_rate(1.0)
             self.status_bar.showMessage("Speed: 1.00x", 2000)
 
+    def detect_embedded_subtitles(self):
+        try:
+            if not self.vlc_player.get_media():
+                return
+
+            track_descriptions = self.vlc_player.video_get_spu_description()
+
+            if track_descriptions:
+                self.subtitle_tracks = []
+                for track in track_descriptions:
+                    track_id = track[0]
+                    track_name_bytes = track[1]
+
+                    if track_name_bytes is None:
+                        track_name = f"Subtitle Track {len(self.subtitle_tracks) + 1}"
+                    elif isinstance(track_name_bytes, bytes):
+                        try:
+                            # Try UTF-8 first (most common)
+                            track_name = track_name_bytes.decode('utf-8', errors='ignore')
+                        except UnicodeDecodeError:
+                            # If UTF-8 fails, try Latin-1 (which will never fail)
+                            track_name = track_name_bytes.decode('latin-1', errors='ignore')
+
+                        track_name = track_name.strip()
+                        if not track_name:
+                            track_name = f"Subtitle Track {len(self.subtitle_tracks) + 1}"
+                    else:
+                        # If it's already a string (shouldn't happen but just in case)
+                        track_name = str(track_name_bytes)
+
+                    self.subtitle_tracks.append((track_id, track_name))
+
+                    track_action = QAction(track_name, self)
+                    track_action.setCheckable(True)
+                    track_action.triggered.connect(lambda checked, tid=track_id: self.set_subtitle_track(tid))
+                    track_action.setActionGroup(self.subtitle_track_group)
+                    self.subtitle_track_menu.addAction(track_action)
+
+                self.status_bar.showMessage(f"Found {len(track_descriptions)} embedded subtitle track(s)", 3000)
+            else:
+                self.subtitle_tracks = []
+                self.status_bar.showMessage("No embedded subtitles found", 2000)
+        except Exception as e:
+            print(f"Error detecting subtitles: {e}")
+
+
+    def load_subtitle_file(self):
+        try:
+            file_path, _ = QFileDialog.getOpenFileName(
+                self,
+                "Open Subtitle File",
+                str(Path.home()),
+                "Subtitle Files (*.srt *.sub *.ass *.ssa *.vtt *.txt);;All Files (*)"
+            )
+
+            if file_path:
+                if self.external_subtitle_path:
+                    self.vlc_player.video_set_subtitle_file(None)
+
+                if self.vlc_player.video_set_subtitle_file(file_path):
+                    self.external_subtitle_path = file_path
+                    self.current_subtitle_track = 0  # External subtitles are track 0
+                    self.clear_subtitle_track_actions()
+
+                    subtitle_name = Path(file_path).name
+                    external_action = QAction(f"External: {subtitle_name}", self)
+                    external_action.setCheckable(True)
+                    external_action.setChecked(True)
+                    external_action.triggered.connect(lambda: self.enable_external_subtitle())
+                    external_action.setActionGroup(self.subtitle_track_group)
+                    self.subtitle_track_menu.addAction(external_action)
+
+                    self.no_subtitle_action = QAction("No Subtitle", self)
+                    self.no_subtitle_action.setCheckable(True)
+                    self.no_subtitle_action.triggered.connect(lambda: self.set_subtitle_track(-1))
+                    self.no_subtitle_action.setActionGroup(self.subtitle_track_group)
+                    self.subtitle_track_menu.addAction(self.no_subtitle_action)
+
+                    self.status_bar.showMessage(f"Loaded subtitle: {subtitle_name}")
+                else:
+                    QMessageBox.warning(self, "Subtitle Error",
+                                        "Failed to load subtitle file. The file might be corrupted or in an unsupported format.")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to load subtitle file:\n{str(e)}")
+
+    def enable_external_subtitle(self):
+        if self.external_subtitle_path:
+            self.vlc_player.video_set_subtitle_file(self.external_subtitle_path)
+            self.current_subtitle_track = 0
+            self.status_bar.showMessage("External subtitle enabled", 2000)
+
+    def set_subtitle_track(self, track_id: int):
+        try:
+            if track_id == -1:
+                if self.current_subtitle_track == 0:  # External subtitle
+                    self.vlc_player.video_set_subtitle_file(None)
+                else:  # Embedded subtitle
+                    self.vlc_player.video_set_spu(-1)  # Disable all subtitles
+
+                self.current_subtitle_track = -1
+                self.status_bar.showMessage("Subtitles disabled", 2000)
+            elif track_id == 0:  # External subtitle
+                if self.external_subtitle_path:
+                    self.vlc_player.video_set_subtitle_file(self.external_subtitle_path)
+                    self.vlc_player.video_set_spu(-1)  # Disable embedded
+                    self.current_subtitle_track = 0
+                    self.status_bar.showMessage("External subtitle enabled", 2000)
+            else:  # Embedded subtitle
+                if self.external_subtitle_path:
+                    self.vlc_player.video_set_subtitle_file(None)
+
+                if self.vlc_player.video_set_spu(track_id):
+                    self.current_subtitle_track = track_id
+                    track_name = next((name for tid, name in self.subtitle_tracks if tid == track_id),
+                                      f"Track {track_id}")
+                    self.status_bar.showMessage(f"Subtitle: {track_name}", 2000)
+                else:
+                    self.status_bar.showMessage(f"Failed to enable subtitle track {track_id}", 2000)
+        except Exception as e:
+            print(f"Error setting subtitle track: {e}")
+
+    def remove_subtitle(self):
+        if self.current_subtitle_track != -1:
+            self.set_subtitle_track(-1)
+
+            if hasattr(self, 'no_subtitle_action'):
+                self.no_subtitle_action.setChecked(True)
+
+            self.status_bar.showMessage("Subtitle removed", 2000)
+
+    def show_subtitle_menu(self):
+        if hasattr(self, 'subtitle_track_menu'):
+            popup_menu = QMenu(self)
+
+            load_action = popup_menu.addAction("Load Subtitle File...")
+            load_action.triggered.connect(self.load_subtitle_file)
+
+            if self.current_subtitle_track != -1:
+                remove_action = popup_menu.addAction("Remove Subtitle")
+                remove_action.triggered.connect(self.remove_subtitle)
+
+            popup_menu.addSeparator()
+            tracks_menu = popup_menu.addMenu("Tracks")
+
+            no_sub_action = tracks_menu.addAction("No Subtitle")
+            no_sub_action.setCheckable(True)
+            no_sub_action.setChecked(self.current_subtitle_track == -1)
+            no_sub_action.triggered.connect(lambda: self.set_subtitle_track(-1))
+
+            tracks_menu.addSeparator()
+
+            if self.external_subtitle_path:
+                ext_action = tracks_menu.addAction(f"External: {Path(self.external_subtitle_path).name}")
+                ext_action.setCheckable(True)
+                ext_action.setChecked(self.current_subtitle_track == 0)
+                ext_action.triggered.connect(self.enable_external_subtitle)
+
+            for track_id, track_name in self.subtitle_tracks:
+                track_action = tracks_menu.addAction(track_name)
+                track_action.setCheckable(True)
+                track_action.setChecked(self.current_subtitle_track == track_id)
+                track_action.triggered.connect(lambda checked, tid=track_id: self.set_subtitle_track(tid))
+
+            popup_menu.exec(self.cursor().pos())
+
+    def clear_subtitle_track_actions(self):
+        actions = self.subtitle_track_menu.actions()
+        for action in actions:
+            self.subtitle_track_menu.removeAction(action)
+
+        for action in self.subtitle_track_group.actions():
+            self.subtitle_track_group.removeAction(action)
+
     def closeEvent(self, event):
         if self.is_fullscreen:
             self.exit_fullscreen()
@@ -630,5 +848,7 @@ class MediaPlayer(QMainWindow):
             self.vlc_player.release()
         if hasattr(self, 'vlc_instance'):
             self.vlc_instance.release()
+        if self.external_subtitle_path:
+            self.vlc_player.video_set_subtitle_file(None)
         self.save_settings()
         super().closeEvent(event)
