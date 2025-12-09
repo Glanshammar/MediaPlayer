@@ -35,6 +35,7 @@ class MediaPlayer(QMainWindow):
         self.resize(width, height)
 
         self.setWindowTitle("Media Player")
+        self.setWindowIcon(QIcon("app_icon.png"))
 
         x = screen_geometry.x() + (screen_geometry.width() - width) // 2
         y = screen_geometry.y() + (screen_geometry.height() - height) // 2
@@ -250,13 +251,11 @@ class MediaPlayer(QMainWindow):
         open_action.triggered.connect(self.open_file)
         self.toolbar.addAction(open_action)
 
-        download_action_video = QAction(style.standardIcon(QStyle.StandardPixmap.SP_ToolBarVerticalExtensionButton),
-                                  "Download Video", self)
+        download_action_video = QAction(QIcon("download_video.png"), "Download Video", self)
         download_action_video.triggered.connect(self.download_video)
         self.toolbar.addAction(download_action_video)
 
-        download_action_audio = QAction(style.standardIcon(QStyle.StandardPixmap.SP_ToolBarVerticalExtensionButton),
-                                  "Download Audio", self)
+        download_action_audio = QAction(QIcon("download_audio.png"), "Download Audio", self)
         download_action_audio.triggered.connect(lambda checked, fmt="audio": self.download_video(fmt))
         self.toolbar.addAction(download_action_audio)
 
