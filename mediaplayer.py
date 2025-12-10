@@ -153,11 +153,13 @@ class MediaPlayer(QMainWindow):
 
         download_action_video = QAction("Download Video", self)
         download_action_video.setShortcut("Ctrl+U")
-        download_action_video.triggered.connect(self.download_video)
+        download_action_video.triggered.connect(lambda checked, fmt="video": self.download_video(fmt))
         file_menu.addAction(download_action_video)
+
         download_action_audio = QAction("Download Audio", self)
         download_action_audio.setShortcut("Ctrl+alt+U")
         download_action_audio.triggered.connect(lambda checked, fmt="audio": self.download_video(fmt))
+        file_menu.addAction(download_action_audio)
 
         exit_action = QAction(QIcon.fromTheme("application-exit"), "E&xit", self)
         exit_action.setShortcut("Ctrl+Q")
@@ -252,7 +254,7 @@ class MediaPlayer(QMainWindow):
         self.toolbar.addAction(open_action)
 
         download_action_video = QAction(QIcon("download_video.png"), "Download Video", self)
-        download_action_video.triggered.connect(self.download_video)
+        download_action_video.triggered.connect(lambda checked, fmt="video": self.download_video(fmt))
         self.toolbar.addAction(download_action_video)
 
         download_action_audio = QAction(QIcon("download_audio.png"), "Download Audio", self)
@@ -353,25 +355,85 @@ class MediaPlayer(QMainWindow):
     def download_video(self, media_format="video") -> None:
         url, ok = QInputDialog.getText(
             self,
-            "Download video",
-            "Enter video/playlist URL:"
+            f"Download {media_format}",
+            f"Enter {media_format} URL (video or playlist):"
         )
 
         if ok and url:
-            self.status_bar.showMessage("Downloading video...")
+            # Store current status bar message to restore later
+            self.original_status_message = self.status_bar.currentMessage()
+
+            # Show initial message
+            self.status_bar.showMessage(f"Starting {media_format} download...")
+
             download_dir = Path.home() / "MediaPlayer"
             download_dir.mkdir(exist_ok=True)
 
+            # Don't create permanent widgets - just update status bar
+            # This avoids threading issues with UI widgets
+
             self.download_thread = DownloadWorker(url, str(download_dir), media_format)
             self.download_thread.finished.connect(self.on_download_finished)
+            self.download_thread.progress.connect(self.on_download_progress)
             self.download_thread.start()
 
+    def on_download_progress(self, progress_info: dict):
+        try:
+            progress_type = progress_info.get('type', '')
+
+            if progress_type == 'playlist_info':
+                total = progress_info.get('total', 0)
+                title = progress_info.get('title', 'Playlist')
+                self.status_bar.showMessage(f"Playlist: {title} ({total} videos)")
+
+            elif progress_type == 'video_info':
+                title = progress_info.get('title', 'Unknown')
+                self.status_bar.showMessage(f"Downloading: {title}")
+
+            elif progress_type == 'progress':
+                title = progress_info.get('title', 'Unknown')
+                current = progress_info.get('current', 1)
+                total = progress_info.get('total', 1)
+                percent = progress_info.get('percent', 0)
+                speed = progress_info.get('speed', '')
+                eta = progress_info.get('eta', '')
+
+                if total > 1:
+                    status_msg = f"({current}/{total}) {title} - {percent:.1f}%"
+                else:
+                    status_msg = f"{title} - {percent:.1f}%"
+
+                if speed and speed != 'N/A':
+                    status_msg += f" | {speed}"
+                if eta and eta != 'N/A':
+                    status_msg += f" | ETA: {eta}"
+
+                self.status_bar.showMessage(status_msg)
+
+            elif progress_type == 'finished_video':
+                title = progress_info.get('title', 'Unknown')
+                current = progress_info.get('current', 1)
+                total = progress_info.get('total', 1)
+
+                if total > 1:
+                    self.status_bar.showMessage(f"Completed {current}/{total}: {title}")
+                else:
+                    self.status_bar.showMessage(f"Completed: {title}")
+        except Exception as e:
+            print(f"Error in progress handler: {e}")
+
     def on_download_finished(self, success: bool, message: str):
-        if success:
-            self.status_bar.showMessage(message)
-        else:
-            self.status_bar.showMessage(message)
-            QMessageBox.warning(self, "Download Failed", message)
+        try:
+            if success:
+                self.status_bar.showMessage(f"✓ {message}", 5000)
+            else:
+                self.status_bar.showMessage(f"✗ {message}", 5000)
+                QMessageBox.warning(self, "Download Failed", message)
+
+            QTimer.singleShot(5000, lambda: self.status_bar.showMessage(
+                self.original_status_message if hasattr(self, 'original_status_message') else "Ready"))
+        except Exception as e:
+            print(f"Error in download finished handler: {e}")
 
     def load_media(self, file_path):
         try:
@@ -858,5 +920,9 @@ class MediaPlayer(QMainWindow):
             self.vlc_instance.release()
         if self.external_subtitle_path:
             self.vlc_player.video_set_subtitle_file(None)
+        if hasattr(self, 'download_status_label'):
+            self.status_bar.removeWidget(self.download_status_label)
+        if hasattr(self, 'download_progress_bar'):
+            self.status_bar.removeWidget(self.download_progress_bar)
         self.save_settings()
         super().closeEvent(event)
