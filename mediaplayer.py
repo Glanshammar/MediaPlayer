@@ -22,6 +22,7 @@ from typing import cast
 from downloadworker import DownloadWorker
 import vlc
 import sys
+import gc
 
 time_start : str = "00:00 / 00:00"
 
@@ -911,18 +912,58 @@ class MediaPlayer(QMainWindow):
             self.subtitle_track_group.removeAction(action)
 
     def closeEvent(self, event):
-        if self.is_fullscreen:
-            self.exit_fullscreen()
-        if hasattr(self, 'vlc_player'):
-            self.vlc_player.stop()
-            self.vlc_player.release()
-        if hasattr(self, 'vlc_instance'):
-            self.vlc_instance.release()
-        if self.external_subtitle_path:
-            self.vlc_player.video_set_subtitle_file(None)
-        if hasattr(self, 'download_status_label'):
-            self.status_bar.removeWidget(self.download_status_label)
-        if hasattr(self, 'download_progress_bar'):
-            self.status_bar.removeWidget(self.download_progress_bar)
-        self.save_settings()
-        super().closeEvent(event)
+        try:
+            if hasattr(self, 'ui_timer'):
+                self.ui_timer.stop()
+
+            if self.is_fullscreen:
+                self.exit_fullscreen()
+
+            if hasattr(self, 'download_thread') and self.download_thread.isRunning():
+                self.download_thread.stop()
+                self.download_thread.wait(2000)  # 2 seconds timeout
+                if self.download_thread.isRunning():
+                    self.download_thread.terminate()
+                    self.download_thread.wait()
+
+            if hasattr(self, 'vlc_player'):
+                try:
+                    self.vlc_player.stop()
+                    media = self.vlc_player.get_media()
+                    if media:
+                        media.release()
+                    self.vlc_player.release()
+                except Exception as e:
+                    print(f"Error releasing VLC player: {e}")
+
+            if hasattr(self, 'vlc_instance'):
+                try:
+                    self.vlc_instance.release()
+                except Exception as e:
+                    print(f"Error releasing VLC instance: {e}")
+
+            if hasattr(self, 'external_subtitle_path'):
+                try:
+                    if hasattr(self, 'vlc_player'):
+                        self.vlc_player.video_set_subtitle_file(None)
+                except Exception as e:
+                    print(f"Error releasing subtitles: {e}")
+
+            if hasattr(self, 'download_status_label'):
+                try:
+                    self.status_bar.removeWidget(self.download_status_label)
+                except Exception as e:
+                    print(f"Error removing download status label: {e}")
+
+            if hasattr(self, 'download_progress_bar'):
+                try:
+                    self.status_bar.removeWidget(self.download_progress_bar)
+                except Exception as e:
+                    print(f"Error removing download progress bar: {e}")
+
+            self.save_settings()
+            gc.collect()
+        except Exception as e:
+            print(f"Error during close event: {e}")
+        finally:
+            super().closeEvent(event)
