@@ -2,11 +2,15 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from pathlib import Path
 import yt_dlp
 import time
+import json
+import hashlib
+import urllib.request
 
 
 class DownloadWorker(QThread):
     finished = pyqtSignal(bool, str)  # success, message
     progress = pyqtSignal(dict)  # progress info dict
+    metadata_saved = pyqtSignal(dict)  # emit when metadata is saved
 
     def __init__(self, url: str, download_dir: str, media_format: str):
         super().__init__()
@@ -19,9 +23,13 @@ class DownloadWorker(QThread):
         self.last_progress_time = 0
         self.last_percent = 0
         self.is_running = True
+        self.metadata_dir = Path(download_dir) / "metadata"
 
     def run(self):
         try:
+            # Create metadata directory if it doesn't exist
+            self.metadata_dir.mkdir(exist_ok=True)
+
             if self.media_format == "video":
                 format_opts = "bv*[vcodec^=avc1]+ba[ext=m4a]/b[ext=mp4]/b"
             elif self.media_format == "audio":
@@ -69,16 +77,87 @@ class DownloadWorker(QThread):
                 'ignoreerrors': True,
                 'extract_flat': False,
                 'noprogress': False,
+                'writethumbnail': False,
+                'writesubtitles': False,
+                'writeautomaticsub': False,
             }
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([self.url])
+                info = ydl.extract_info(self.url, download=True)
+
+                # Save metadata for each downloaded item
+                if info and '_type' in info and info['_type'] == 'playlist':
+                    entries = info.get('entries', [])
+                    for entry in entries:
+                        if entry and 'requested_downloads' in entry:
+                            metadata = self.save_metadata(entry)
+                            if metadata:
+                                self.metadata_saved.emit(metadata)
+                elif info:
+                    metadata = self.save_metadata(info)
+                    if metadata:
+                        self.metadata_saved.emit(metadata)
 
             if self.is_running:
                 self.finished.emit(True, "Download completed successfully")
         except Exception as e:
             if self.is_running:
                 self.finished.emit(False, f"Download failed: {str(e)}")
+
+    def save_metadata(self, info_dict):
+        try:
+            video_id = info_dict.get('id', '')
+            if not video_id:
+                unique_string = f"{info_dict.get('title', '')}{info_dict.get('uploader', '')}"
+                video_id = hashlib.md5(unique_string.encode()).hexdigest()[:10]
+
+            metadata = {
+                'title': info_dict.get('title'),
+                'upload_date': info_dict.get('upload_date'),
+                'duration': info_dict.get('duration'),  # in seconds
+                'uploader': info_dict.get('uploader'),  # channel name
+                'thumbnail': info_dict.get('thumbnail'),
+                'view_count': info_dict.get('view_count'),
+                'like_count': info_dict.get('like_count'),
+                'description': info_dict.get('description'),
+                'webpage_url': info_dict.get('webpage_url'),
+                'extractor': info_dict.get('extractor'),
+                'extractor_key': info_dict.get('extractor_key'),
+                'format': self.media_format,
+                'download_date': time.strftime('%Y%m%d_%H%M%S'),
+                'video_id': video_id,
+            }
+
+            if 'requested_downloads' in info_dict and info_dict['requested_downloads']:
+                filepath = info_dict['requested_downloads'][0].get('filepath', '')
+                if filepath:
+                    metadata['filename'] = filepath
+                    metadata['filename_short'] = Path(filepath).name
+
+            if metadata['thumbnail']:
+                thumbnail_filename = f"{video_id}.jpg"
+                thumbnail_path = self.metadata_dir / thumbnail_filename
+                try:
+                    urllib.request.urlretrieve(metadata['thumbnail'], thumbnail_path)
+                    metadata['thumbnail_filename'] = thumbnail_filename
+                    metadata['thumbnail_path'] = str(thumbnail_path)
+                except Exception as e:
+                    print(f"Error downloading thumbnail: {e}")
+                    metadata['thumbnail_filename'] = None
+                    metadata['thumbnail_path'] = None
+
+            metadata_filename = f"{video_id}.json"
+            metadata_path = self.metadata_dir / metadata_filename
+
+            with open(metadata_path, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, ensure_ascii=False, indent=2)
+
+            print(f"Metadata saved: {metadata_filename}")
+            return metadata
+
+        except Exception as e:
+            print(f"Error saving metadata: {e}")
+            return None
 
     def process_progress_hook(self, d):
         if not self.is_running:
@@ -91,7 +170,6 @@ class DownloadWorker(QThread):
                 return
 
             self.last_progress_time = current_time
-
             status = d.get('status', '')
 
             if status == 'downloading':
@@ -100,7 +178,6 @@ class DownloadWorker(QThread):
                     self.current_title = info.get('title', self.current_title)
                     self.current_video = info.get('playlist_index', self.current_video)
 
-                # Calculate percentage
                 total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate')
                 downloaded_bytes = d.get('downloaded_bytes', 0)
 

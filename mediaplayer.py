@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
 from pathlib import Path
 from typing import cast
 from downloadworker import DownloadWorker
+from sidebar import VideoSidebar
 import vlc
 import sys
 import gc
@@ -44,6 +45,7 @@ class MediaPlayer(QMainWindow):
         self.is_fullscreen = False
         self.current_position = 0
         self.is_playing = False
+        self.sidebar_visible = True
 
         self.video_widget = QVideoWidget()
 
@@ -77,7 +79,6 @@ class MediaPlayer(QMainWindow):
 
             self.vlc_instance = vlc.Instance(vlc_args)
             self.vlc_player = self.vlc_instance.media_player_new()
-
         except Exception as e:
             QMessageBox.critical(self, "VLC Error",
                                  f"Failed to initialize VLC player:\n{str(e)}\n\n"
@@ -88,10 +89,21 @@ class MediaPlayer(QMainWindow):
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
 
-        self.main_layout = QVBoxLayout(self.central_widget)
-        self.main_layout.addWidget(self.video_widget)
+        self.main_layout = QHBoxLayout(self.central_widget)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setSpacing(0)
 
-        self.controls_layout = QHBoxLayout()
+        self.create_sidebar()
+
+        self.video_container = QWidget()
+        self.video_container_layout = QVBoxLayout(self.video_container)
+        self.video_container_layout.setContentsMargins(0, 0, 0, 0)
+        self.video_container_layout.setSpacing(0)
+        self.video_container_layout.addWidget(self.video_widget, 1)
+
+        self.controls_widget = QWidget()
+        self.controls_layout = QHBoxLayout(self.controls_widget)
+        self.controls_layout.setContentsMargins(5, 5, 5, 5)
 
         self.play_button = QPushButton()
         style = self.style()
@@ -127,7 +139,10 @@ class MediaPlayer(QMainWindow):
         volume_layout.addWidget(self.volume_slider)
 
         self.controls_layout.addLayout(volume_layout)
-        self.main_layout.addLayout(self.controls_layout)
+        self.video_container_layout.addWidget(self.controls_widget)
+
+        self.main_layout.addWidget(self.sidebar)
+        self.main_layout.addWidget(self.video_container, 1)
 
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
@@ -135,8 +150,15 @@ class MediaPlayer(QMainWindow):
 
         self.create_menu_bar()
         self.create_toolbar()
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setFocus()
+
+        download_dir = Path.home() / "MediaPlayer"
+        metadata_dir = download_dir / "metadata"
+        self.sidebar.set_metadata_dir(metadata_dir)
+        self.sidebar.refresh_video_list()
+
+    def create_sidebar(self):
+        self.sidebar = VideoSidebar(self)
+        self.sidebar.video_selected.connect(self.load_media_from_sidebar)
 
     def create_menu_bar(self) -> None:
         menu_bar = self.menuBar()
@@ -161,6 +183,13 @@ class MediaPlayer(QMainWindow):
         download_action_audio.setShortcut("Ctrl+alt+U")
         download_action_audio.triggered.connect(lambda checked, fmt="audio": self.download_video(fmt))
         file_menu.addAction(download_action_audio)
+
+        file_menu.addSeparator()
+
+        self.sidebar_action = QAction("&Toggle Video Library", self)
+        self.sidebar_action.setShortcut("Ctrl+L")
+        self.sidebar_action.triggered.connect(self.toggle_sidebar)
+        file_menu.addAction(self.sidebar_action)
 
         exit_action = QAction(QIcon.fromTheme("application-exit"), "E&xit", self)
         exit_action.setShortcut("Ctrl+Q")
@@ -254,6 +283,10 @@ class MediaPlayer(QMainWindow):
         open_action.triggered.connect(self.open_file)
         self.toolbar.addAction(open_action)
 
+        self.sidebar_toolbar_action = QAction(QIcon.fromTheme("view-list-details"), "Toggle Video Library", self)
+        self.sidebar_toolbar_action.triggered.connect(self.toggle_sidebar)
+        self.toolbar.addAction(self.sidebar_toolbar_action)
+
         download_action_video = QAction(QIcon("download_video.png"), "Download Video", self)
         download_action_video.triggered.connect(lambda checked, fmt="video": self.download_video(fmt))
         self.toolbar.addAction(download_action_video)
@@ -282,6 +315,20 @@ class MediaPlayer(QMainWindow):
         self.volume_button.clicked.connect(self.toggle_mute)
         self.position_slider.sliderMoved.connect(self.set_position_from_slider)
         self.volume_slider.valueChanged.connect(self.set_volume)
+
+    def toggle_sidebar(self):
+        self.sidebar_visible = not self.sidebar_visible
+
+        if self.sidebar_visible:
+            self.sidebar.show()
+        else:
+            self.sidebar.hide()
+
+        self.save_settings()
+
+    def load_media_from_sidebar(self, video_path):
+        self.load_media(video_path)
+        self.play()
 
     def position_slider_pressed(self):
         self.ui_timer.stop()
@@ -376,7 +423,12 @@ class MediaPlayer(QMainWindow):
             self.download_thread = DownloadWorker(url, str(download_dir), media_format)
             self.download_thread.finished.connect(self.on_download_finished)
             self.download_thread.progress.connect(self.on_download_progress)
+            self.download_thread.metadata_saved.connect(self.on_metadata_saved)
             self.download_thread.start()
+
+    def on_metadata_saved(self):
+        if self.sidebar.isVisible():
+            self.sidebar.refresh_video_list()
 
     def on_download_progress(self, progress_info: dict):
         try:
@@ -713,10 +765,16 @@ class MediaPlayer(QMainWindow):
         self.set_volume(volume)
         self.recent_files = self.settings.value("recentFiles", [], type=list)
 
+        sidebar_visible = self.settings.value("sidebar_visible", True, type=bool)
+        self.sidebar_visible = sidebar_visible
+        if not self.sidebar_visible:
+            self.sidebar.hide()
+
     def save_settings(self) -> None:
         self.settings.setValue("windowGeometry", self.saveGeometry())
         self.settings.setValue("volume", self.volume_slider.value())
         self.settings.setValue("recentFiles", self.recent_files[-10:])  # Keep last 10
+        self.settings.setValue("sidebar_visible", self.sidebar_visible)
 
     def increase_speed(self):
         if self.vlc_player.get_media():
@@ -781,7 +839,6 @@ class MediaPlayer(QMainWindow):
                 self.status_bar.showMessage("No embedded subtitles found", 2000)
         except Exception as e:
             print(f"Error detecting subtitles: {e}")
-
 
     def load_subtitle_file(self):
         try:
