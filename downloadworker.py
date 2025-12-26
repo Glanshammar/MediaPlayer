@@ -237,3 +237,9 @@ class DownloadWorker(QThread):
 
     def stop(self):
         self.is_running = False
+        time.sleep(0.1)
+
+    def cleanup(self):
+        """Clean up any resources"""
+        # Clean up any yt_dlp instances or connections
+        pass

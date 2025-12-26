@@ -65,6 +65,8 @@ class MediaPlayer(QMainWindow):
         self.ui_timer.timeout.connect(self.update_ui)
         self.ui_timer.start(100)  # Update every 100ms
 
+        self._closing = False
+
     def setup_vlc_player(self):
         try:
             vlc_args = [
@@ -408,6 +410,16 @@ class MediaPlayer(QMainWindow):
         )
 
         if ok and url:
+            if hasattr(self, 'download_thread') and self.download_thread.isRunning():
+                reply = QMessageBox.question(self, "Download in progress",
+                                             "A download is already in progress. Do you want to stop it and start a new one?",
+                                             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+                if reply == QMessageBox.StandardButton.No:
+                    return
+                else:
+                    self.download_thread.stop()
+                    self.download_thread.wait(1000)
+
             self.original_status_message = self.status_bar.currentMessage()
             self.status_bar.showMessage(f"Starting {media_format} download...")
 
@@ -964,22 +976,51 @@ class MediaPlayer(QMainWindow):
 
     def closeEvent(self, event):
         try:
-            if hasattr(self, 'ui_timer'):
+            if hasattr(self, '_closing'):
+                event.accept()
+                return
+            self._closing = True
+
+            if hasattr(self, 'ui_timer') and self.ui_timer.isActive():
                 self.ui_timer.stop()
 
             if self.is_fullscreen:
                 self.exit_fullscreen()
 
-            if hasattr(self, 'download_thread') and self.download_thread.isRunning():
-                self.download_thread.stop()
-                self.download_thread.wait(2000)  # 2 seconds timeout
-                if self.download_thread.isRunning():
-                    self.download_thread.terminate()
-                    self.download_thread.wait()
-
             if hasattr(self, 'vlc_player'):
                 try:
                     self.vlc_player.stop()
+                    QApplication.processEvents()
+                except Exception as e:
+                    print(f"Error stopping VLC player: {e}")
+
+            if hasattr(self, 'download_thread') and self.download_thread.isRunning():
+                try:
+                    # Try to disconnect signals
+                    try:
+                        self.download_thread.finished.disconnect()
+                        self.download_thread.progress.disconnect()
+                        self.download_thread.metadata_saved.disconnect()
+                    except (TypeError, RuntimeError):
+                        # TypeError: when trying to disconnect a non-existent connection
+                        # RuntimeError: when the signal is already disconnected
+                        pass
+                    except Exception as e:
+                        print(f"Error disconnecting signals: {e}")
+
+                    # Set running flag to False
+                    self.download_thread.stop()
+
+                    # Wait for thread to finish with timeout
+                    if not self.download_thread.wait(1000):  # 1 second timeout
+                        self.download_thread.terminate()
+                        if not self.download_thread.wait(500):  # 0.5 second timeout
+                            print("Thread still not terminated")
+                except Exception as e:
+                    print(f"Error stopping download thread: {e}")
+
+            if hasattr(self, 'vlc_player'):
+                try:
                     media = self.vlc_player.get_media()
                     if media:
                         media.release()
@@ -993,28 +1034,17 @@ class MediaPlayer(QMainWindow):
                 except Exception as e:
                     print(f"Error releasing VLC instance: {e}")
 
-            if hasattr(self, 'external_subtitle_path'):
+            if hasattr(self, 'external_subtitle_path') and self.external_subtitle_path:
                 try:
                     if hasattr(self, 'vlc_player'):
                         self.vlc_player.video_set_subtitle_file(None)
                 except Exception as e:
                     print(f"Error releasing subtitles: {e}")
 
-            if hasattr(self, 'download_status_label'):
-                try:
-                    self.status_bar.removeWidget(self.download_status_label)
-                except Exception as e:
-                    print(f"Error removing download status label: {e}")
-
-            if hasattr(self, 'download_progress_bar'):
-                try:
-                    self.status_bar.removeWidget(self.download_progress_bar)
-                except Exception as e:
-                    print(f"Error removing download progress bar: {e}")
-
             self.save_settings()
             gc.collect()
+            print("Close event completed successfully")
         except Exception as e:
             print(f"Error during close event: {e}")
         finally:
-            super().closeEvent(event)
+            event.accept()
