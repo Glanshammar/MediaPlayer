@@ -408,17 +408,11 @@ class MediaPlayer(QMainWindow):
         )
 
         if ok and url:
-            # Store current status bar message to restore later
             self.original_status_message = self.status_bar.currentMessage()
-
-            # Show initial message
             self.status_bar.showMessage(f"Starting {media_format} download...")
 
             download_dir = Path.home() / "MediaPlayer"
             download_dir.mkdir(exist_ok=True)
-
-            # Don't create permanent widgets - just update status bar
-            # This avoids threading issues with UI widgets
 
             self.download_thread = DownloadWorker(url, str(download_dir), media_format)
             self.download_thread.finished.connect(self.on_download_finished)

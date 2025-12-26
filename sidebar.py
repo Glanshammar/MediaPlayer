@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
 from pathlib import Path
 import json
 
+
 class VideoSidebar(QWidget):
     video_selected = pyqtSignal(str)
 
@@ -62,7 +63,6 @@ class VideoSidebar(QWidget):
         self.info_label.setStyleSheet("color: gray; padding: 10px;")
         layout.addWidget(self.info_label)
 
-        self.video_data = {}
         self.metadata_dir = None
 
     def set_metadata_dir(self, metadata_dir):
@@ -70,7 +70,6 @@ class VideoSidebar(QWidget):
 
     def refresh_video_list(self):
         self.video_list.clear()
-        self.video_data.clear()
 
         if not self.metadata_dir or not self.metadata_dir.exists():
             self.info_label.setText("No metadata directory found")
@@ -104,7 +103,6 @@ class VideoSidebar(QWidget):
 
         videos_info.sort(key=lambda x: x['metadata'].get('download_date', ''), reverse=True)
 
-        # Add videos to list
         for video_info in videos_info:
             metadata = video_info['metadata']
             video_path = video_info['video_path']
@@ -121,6 +119,7 @@ class VideoSidebar(QWidget):
                 duration_str = "Unknown"
 
             item.setText(f"{title}\n{uploader} • {duration_str}")
+            item.setData(Qt.ItemDataRole.UserRole, video_path)
 
             thumbnail_filename = metadata.get('thumbnail_filename')
             if thumbnail_filename:
@@ -135,10 +134,9 @@ class VideoSidebar(QWidget):
                     except Exception as e:
                         print(f"Error loading thumbnail {thumbnail_path}: {e}")
 
-            self.video_data[item] = video_path
             self.video_list.addItem(item)
 
     def on_video_double_clicked(self, item):
-        if item in self.video_data:
-            video_path = self.video_data[item]
+        video_path = item.data(Qt.ItemDataRole.UserRole)
+        if video_path:
             self.video_selected.emit(video_path)
