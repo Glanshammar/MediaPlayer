@@ -161,6 +161,7 @@ class MediaPlayer(QMainWindow):
     def create_sidebar(self):
         self.sidebar = VideoSidebar(self)
         self.sidebar.video_selected.connect(self.load_media_from_sidebar)
+        self.sidebar.video_deleted.connect(self.on_video_deleted)
 
     def create_menu_bar(self) -> None:
         menu_bar = self.menuBar()
@@ -328,6 +329,17 @@ class MediaPlayer(QMainWindow):
 
         self.save_settings()
 
+    def on_video_deleted(self, video_path):
+        try:
+            if hasattr(self, 'current_media_path') and self.current_media_path == video_path:
+                self.stop()
+                self.status_bar.showMessage("Current video was deleted", 3000)
+
+            if self.sidebar.isVisible():
+                self.sidebar.refresh_video_list()
+        except Exception as e:
+            print(f"Error handling video deletion: {e}")
+
     def load_media_from_sidebar(self, video_path):
         self.load_media(video_path)
         self.play()
@@ -429,10 +441,10 @@ class MediaPlayer(QMainWindow):
             self.download_thread = DownloadWorker(url, str(download_dir), media_format)
             self.download_thread.finished.connect(self.on_download_finished)
             self.download_thread.progress.connect(self.on_download_progress)
-            self.download_thread.metadata_saved.connect(self.on_metadata_saved)
+            self.download_thread.metadata_saved.connect(lambda metadata: self.on_metadata_saved(metadata))
             self.download_thread.start()
 
-    def on_metadata_saved(self):
+    def on_metadata_saved(self, metadata):
         if self.sidebar.isVisible():
             self.sidebar.refresh_video_list()
 
@@ -996,7 +1008,6 @@ class MediaPlayer(QMainWindow):
 
             if hasattr(self, 'download_thread') and self.download_thread.isRunning():
                 try:
-                    # Try to disconnect signals
                     try:
                         self.download_thread.finished.disconnect()
                         self.download_thread.progress.disconnect()
@@ -1008,10 +1019,8 @@ class MediaPlayer(QMainWindow):
                     except Exception as e:
                         print(f"Error disconnecting signals: {e}")
 
-                    # Set running flag to False
                     self.download_thread.stop()
 
-                    # Wait for thread to finish with timeout
                     if not self.download_thread.wait(1000):  # 1 second timeout
                         self.download_thread.terminate()
                         if not self.download_thread.wait(500):  # 0.5 second timeout
