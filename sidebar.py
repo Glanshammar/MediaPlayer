@@ -127,7 +127,7 @@ class VideoSidebar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("VideoSidebar")
-        self.setFixedWidth(300)
+        self.setFixedWidth(420)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
