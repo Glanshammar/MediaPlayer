@@ -24,6 +24,8 @@ from sidebar import VideoSidebar
 import vlc
 import sys
 import gc
+import json
+import time
 
 time_start : str = "00:00 / 00:00"
 
@@ -48,6 +50,9 @@ class MediaPlayer(QMainWindow):
         self.sidebar_visible = True
 
         self.video_widget = QVideoWidget()
+
+        self.download_dir = Path.home() / "MediaPlayer"
+        self.metadata_dir = self.download_dir / "metadata"
 
         self.setup_vlc_player()
         self.setup_ui()
@@ -153,9 +158,7 @@ class MediaPlayer(QMainWindow):
         self.create_menu_bar()
         self.create_toolbar()
 
-        download_dir = Path.home() / "MediaPlayer"
-        metadata_dir = download_dir / "metadata"
-        self.sidebar.set_metadata_dir(metadata_dir)
+        self.sidebar.set_metadata_dir(self.metadata_dir)
         self.sidebar.refresh_video_list()
 
     def create_sidebar(self):
@@ -435,10 +438,9 @@ class MediaPlayer(QMainWindow):
             self.original_status_message = self.status_bar.currentMessage()
             self.status_bar.showMessage(f"Starting {media_format} download...")
 
-            download_dir = Path.home() / "MediaPlayer"
-            download_dir.mkdir(exist_ok=True)
+            self.download_dir.mkdir(exist_ok=True)
 
-            self.download_thread = DownloadWorker(url, str(download_dir), media_format)
+            self.download_thread = DownloadWorker(url, str(self.download_dir), media_format)
             self.download_thread.finished.connect(self.on_download_finished)
             self.download_thread.progress.connect(self.on_download_progress)
             self.download_thread.metadata_saved.connect(lambda metadata: self.on_metadata_saved(metadata))
@@ -509,6 +511,7 @@ class MediaPlayer(QMainWindow):
     def load_media(self, file_path):
         try:
             self.current_media_path = file_path
+            self.mark_video_as_viewed(file_path)
 
             if sys.platform.startswith('win'):
                 self.vlc_player.set_hwnd(int(self.video_widget.winId()))
@@ -539,6 +542,32 @@ class MediaPlayer(QMainWindow):
             QTimer.singleShot(500, self.detect_embedded_subtitles)
         except Exception as e:
             QMessageBox.critical(self, "Load Error", f"Failed to load media:\n{str(e)}")
+
+    def mark_video_as_viewed(self, video_path):
+        try:
+            if not self.metadata_dir.exists():
+                return
+
+            for json_file in self.metadata_dir.glob("*.json"):
+                try:
+                    with open(json_file, 'r', encoding='utf-8') as f:
+                        metadata = json.load(f)
+
+                    if metadata.get('filename') == video_path:
+                        metadata['viewed'] = True
+                        metadata['viewed_date'] = time.strftime('%Y%m%d_%H%M%S')
+                        metadata['title'] = f"✓ {metadata['title']}"
+
+                        with open(json_file, 'w', encoding='utf-8') as f:
+                            json.dump(metadata, f, ensure_ascii=False, indent=2)
+
+                        if hasattr(self, 'sidebar') and self.sidebar.isVisible():
+                            self.sidebar.refresh_video_list()
+                        break
+                except Exception as e:
+                    print(f"Error updating metadata {json_file}: {e}")
+        except Exception as e:
+            print(f"Error marking video as viewed: {e}")
 
     def toggle_playback(self):
         if self.vlc_player.get_media():

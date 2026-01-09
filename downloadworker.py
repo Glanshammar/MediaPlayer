@@ -126,6 +126,8 @@ class DownloadWorker(QThread):
                 'format': self.media_format,
                 'download_date': time.strftime('%Y%m%d_%H%M%S'),
                 'video_id': video_id,
+                'viewed': False,
+                'viewed_date': None,
             }
 
             if 'requested_downloads' in info_dict and info_dict['requested_downloads']:
