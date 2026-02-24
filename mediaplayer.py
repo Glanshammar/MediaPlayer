@@ -3,6 +3,7 @@ from PyQt6.QtGui import QIcon, QAction, QKeyEvent, QActionGroup
 from PyQt6.QtMultimediaWidgets import QVideoWidget
 from PyQt6.QtWidgets import (
     QMainWindow,
+    QApplication,
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
@@ -24,6 +25,7 @@ from sidebar import VideoSidebar
 import vlc
 import sys
 import gc
+import os
 import json
 import time
 
@@ -75,9 +77,9 @@ class MediaPlayer(QMainWindow):
     def setup_vlc_player(self):
         try:
             vlc_args = [
-                '--no-xlib',  # Don't use Xlib (Linux)
+                '--no-xlib',
+                '--vout=x11',
                 '--intf', 'dummy',
-                '--no-video-title-show',
                 '--no-snapshot-preview',
                 '--quiet',
                 '--file-caching=1000',
@@ -510,18 +512,23 @@ class MediaPlayer(QMainWindow):
 
     def load_media(self, file_path):
         try:
+            self.video_widget.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
+            win_id = self.video_widget.winId()
+            if win_id == 0:
+                print("Warning: winId() is zero, embedding may fail")
+
             self.current_media_path = file_path
             self.mark_video_as_viewed(file_path)
 
-            if sys.platform.startswith('win'):
-                self.vlc_player.set_hwnd(int(self.video_widget.winId()))
-            elif sys.platform.startswith('linux'):
-                self.vlc_player.set_xwindow(int(self.video_widget.winId()))
-            elif sys.platform.startswith('darwin'):
-                self.vlc_player.set_nsobject(int(self.video_widget.winId()))
-
             media = self.vlc_instance.media_new(file_path)
             self.vlc_player.set_media(media)
+
+            if sys.platform.startswith('win'):
+                self.vlc_player.set_hwnd(int(win_id))
+            elif sys.platform.startswith('linux'):
+                self.vlc_player.set_xwindow(int(win_id))
+            elif sys.platform.startswith('darwin'):
+                self.vlc_player.set_nsobject(int(win_id))
 
             self.current_subtitle_track = -1
             self.external_subtitle_path = None
