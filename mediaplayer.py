@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
 from pathlib import Path
 from typing import cast
 from downloadworker import DownloadWorker
+from linuxfunctions import find_vlc_plugin_path
 from sidebar import VideoSidebar
 import vlc
 import sys
@@ -86,7 +87,21 @@ class MediaPlayer(QMainWindow):
                 '--network-caching=1000'
             ]
 
+            if 'VLC_PLUGIN_PATH' not in os.environ:
+                print("VLC_PLUGIN_PATH not found. ")
+                plugin_path = find_vlc_plugin_path()
+                if plugin_path:
+                    print(f"Plugin path found: {plugin_path}")
+                    os.environ['VLC_PLUGIN_PATH'] = plugin_path
+
             self.vlc_instance = vlc.Instance(vlc_args)
+            if self.vlc_instance is None:
+                raise RuntimeError(
+                    "Failed to create VLC instance. Make sure VLC is installed "
+                    "and the VLC libraries are accessible.\n"
+                    "You can try setting the environment variable VLC_PLUGIN_PATH "
+                    "to the VLC plugins directory (e.g., /usr/lib/vlc/plugins)."
+                )
             self.vlc_player = self.vlc_instance.media_player_new()
         except Exception as e:
             QMessageBox.critical(self, "VLC Error",
@@ -415,6 +430,7 @@ class MediaPlayer(QMainWindow):
             if file_path:
                 self.load_media(file_path)
                 self.status_bar.showMessage(f"Loaded: {Path(file_path).name}")
+                self.setWindowTitle(f"Media Player - {Path(file_path).name}")
                 self.play()
         except Exception as e:
             self.status_bar.showMessage(f"Error opening file: {str(e)}")
