@@ -310,3 +310,116 @@ class VideoSidebar(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Deletion Error",
                                  f"Error deleting video: {str(e)}")
+
+
+class RightSidebar(QWidget):
+    chapter_selected = pyqtSignal(float)  # emits start time in seconds
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("RightSidebar")
+        self.setFixedWidth(50)  # collapsed width
+        self._expanded = False
+        self._expanded_width = 300
+        self._collapsed_width = 50
+
+        # Main layout
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Toggle button (icon only)
+        self.toggle_button = QPushButton()
+        self.toggle_button.setIcon(QIcon("chapters.png"))
+        self.toggle_button.setToolTip("Show/Hide Chapters")
+        self.toggle_button.setFixedSize(40, 40)
+        self.toggle_button.clicked.connect(self.toggle_expand)
+        layout.addWidget(self.toggle_button, alignment=Qt.AlignmentFlag.AlignTop)
+
+        # Container for chapters (hidden when collapsed)
+        self.chapters_container = QWidget()
+        self.chapters_layout = QVBoxLayout(self.chapters_container)
+        self.chapters_layout.setContentsMargins(5, 10, 5, 10)
+        self.chapters_layout.setSpacing(5)
+
+        self.chapters_list = QListWidget()
+        self.chapters_list.setAlternatingRowColors(True)
+        self.chapters_list.itemClicked.connect(self.on_chapter_clicked)
+        self.chapters_layout.addWidget(self.chapters_list)
+
+        self.no_chapters_label = QLabel("No chapters available")
+        self.no_chapters_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.no_chapters_label.setWordWrap(True)
+        self.no_chapters_label.hide()
+        self.chapters_layout.addWidget(self.no_chapters_label)
+
+        layout.addWidget(self.chapters_container)
+        self.chapters_container.hide()  # start collapsed
+
+        self.current_metadata = None
+
+    def toggle_expand(self):
+        if self._expanded:
+            self.collapse()
+        else:
+            self.expand()
+
+    def expand(self):
+        self.setFixedWidth(self._expanded_width)
+        self.chapters_container.show()
+        self._expanded = True
+
+    def collapse(self):
+        self.setFixedWidth(self._collapsed_width)
+        self.chapters_container.hide()
+        self._expanded = False
+
+    def set_chapters(self, metadata):
+        self.current_metadata = metadata
+        if metadata is None:
+            self.clear_chapters()
+            return
+
+        chapters = metadata.get('chapters', [])
+        if not isinstance(chapters, list):
+            chapters = []
+
+        self.chapters_list.clear()
+        if chapters:
+            try:
+                for ch in chapters:
+                    if not isinstance(ch, dict):
+                        continue
+                    title = ch.get('title', 'Chapter')
+                    start = ch.get('start', 0)
+                    try:
+                        start = float(start)
+                    except (TypeError, ValueError):
+                        start = 0
+                    minutes = int(start // 60)
+                    seconds = int(start % 60)
+                    time_str = f"{minutes:02d}:{seconds:02d}"
+                    item_text = f"{time_str} - {title}"
+                    item = QListWidgetItem(item_text)
+                    item.setData(Qt.ItemDataRole.UserRole, start)
+                    self.chapters_list.addItem(item)
+                self.no_chapters_label.hide()
+                self.chapters_list.show()
+            except Exception as e:
+                print(f"Error loading chapters: {e}")
+                self.no_chapters_label.setText("Error loading chapters")
+                self.no_chapters_label.show()
+                self.chapters_list.hide()
+        else:
+            self.no_chapters_label.show()
+            self.chapters_list.hide()
+
+    def on_chapter_clicked(self, item):
+        start_time = item.data(Qt.ItemDataRole.UserRole)
+        if start_time is not None:
+            self.chapter_selected.emit(float(start_time))
+
+    def clear_chapters(self):
+        self.chapters_list.clear()
+        self.no_chapters_label.hide()
+        self.current_metadata = None

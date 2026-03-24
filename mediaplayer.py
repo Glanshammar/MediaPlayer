@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import cast
 from downloadworker import DownloadWorker
 from linuxfunctions import find_vlc_plugin_path
-from sidebar import VideoSidebar
+from sidebar import VideoSidebar, RightSidebar
 import vlc
 import sys
 import gc
@@ -56,6 +56,8 @@ class MediaPlayer(QMainWindow):
 
         self.download_dir = Path.home() / "MediaPlayer"
         self.metadata_dir = self.download_dir / "metadata"
+        self.metadata_for_current_video = None
+        self.metadata_file_for_current_video = None
 
         self.setup_vlc_player()
         self.setup_ui()
@@ -167,6 +169,10 @@ class MediaPlayer(QMainWindow):
 
         self.main_layout.addWidget(self.sidebar)
         self.main_layout.addWidget(self.video_container, 1)
+
+        self.right_sidebar = RightSidebar(self)
+        self.main_layout.addWidget(self.right_sidebar, 0)
+        self.right_sidebar.chapter_selected.connect(self.jump_to_chapter)
 
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
@@ -418,6 +424,41 @@ class MediaPlayer(QMainWindow):
             return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
         return f"{minutes:02d}:{seconds:02d}"
 
+    def find_metadata_for_video(self, video_path):
+        if not self.metadata_dir.exists():
+            return
+        for json_file in self.metadata_dir.glob("*.json"):
+            try:
+                with open(json_file, 'r', encoding='utf-8') as f:
+                    metadata = json.load(f)
+                if metadata.get('filename') == video_path:
+                    self.metadata_for_current_video = metadata
+                    self.metadata_file_for_current_video = json_file
+                    return
+            except Exception as e:
+                print(f"Error parsing metadata for video: {e}")
+        self.metadata_for_current_video = None
+        self.metadata_file_for_current_video = None
+
+    def save_current_time_progress(self):
+        metadata = self.metadata_for_current_video
+        metadata_file = self.metadata_file_for_current_video
+        if not metadata_file or not metadata:
+            return
+        try:
+            current_pos = self.vlc_player.get_time() // 1000  # seconds
+            if current_pos != metadata.get('progress', 0):
+                metadata['progress'] = current_pos
+                with open(metadata_file, 'w', encoding='utf-8') as f:
+                    json.dump(metadata, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"Error saving progress: {e}")
+
+    def jump_to_chapter(self, start_time_seconds):
+        if self.vlc_player.get_media():
+            self.set_position(int(start_time_seconds * 1000))
+            self.status_bar.showMessage(f"Jumped to {self.format_time(start_time_seconds * 1000)}", 2000)
+
     def open_file(self):
         try:
             file_path, _ = QFileDialog.getOpenFileName(
@@ -528,6 +569,8 @@ class MediaPlayer(QMainWindow):
 
     def load_media(self, file_path):
         try:
+            if hasattr(self, 'progress_save_timer') and self.progress_save_timer.isActive():
+                self.progress_save_timer.stop()
             self.video_widget.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
             win_id = self.video_widget.winId()
             if win_id == 0:
@@ -535,9 +578,25 @@ class MediaPlayer(QMainWindow):
 
             self.current_media_path = file_path
             self.mark_video_as_viewed(file_path)
+            self.progress_save_timer = QTimer(self)
+            self.progress_save_timer.timeout.connect(self.save_current_time_progress)
+            self.progress_save_timer.start(5000)  # save every 5 seconds
 
             media = self.vlc_instance.media_new(file_path)
             self.vlc_player.set_media(media)
+
+            self.find_metadata_for_video(file_path)
+            metadata = self.metadata_for_current_video
+            metadata_file = self.metadata_file_for_current_video
+            if metadata and metadata_file:
+                progress = metadata.get('progress', 0)
+                if progress > 0:
+                    QTimer.singleShot(100, lambda p=progress: self.set_position(p * 1000))
+                    self.status_bar.showMessage(f"Resuming from {self.format_time(progress * 1000)}", 3000)
+                # Pass metadata to right sidebar for chapters
+                self.right_sidebar.set_chapters(metadata)
+            else:
+                self.right_sidebar.clear_chapters()
 
             if sys.platform.startswith('win'):
                 self.vlc_player.set_hwnd(int(win_id))
@@ -577,6 +636,10 @@ class MediaPlayer(QMainWindow):
                         metadata = json.load(f)
 
                     if metadata.get('filename') == video_path:
+                        if metadata.get('viewed', False):
+                            # Already viewed, no changes needed
+                            break
+
                         metadata['viewed'] = True
                         metadata['viewed_date'] = time.strftime('%Y%m%d_%H%M%S')
                         metadata['title'] = f"✓ {metadata['title']}"
@@ -608,6 +671,7 @@ class MediaPlayer(QMainWindow):
         if self.vlc_player.get_media():
             self.vlc_player.pause()
             self.is_playing = False
+            self.save_current_time_progress()
 
     def stop(self):
         if self.vlc_player.get_media():
@@ -615,6 +679,7 @@ class MediaPlayer(QMainWindow):
             self.position_slider.setValue(0)
             self.position_label.setText(time_start)
             self.is_playing = False
+            self.save_current_time_progress()
 
         style = self.style()
         if style:
@@ -1102,6 +1167,7 @@ class MediaPlayer(QMainWindow):
                 except Exception as e:
                     print(f"Error releasing subtitles: {e}")
 
+            self.save_current_time_progress()
             self.save_settings()
             gc.collect()
             print("Close event completed successfully")

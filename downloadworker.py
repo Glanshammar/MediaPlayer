@@ -128,7 +128,21 @@ class DownloadWorker(QThread):
                 'video_id': video_id,
                 'viewed': False,
                 'viewed_date': None,
+                'progress': 0,
             }
+
+            chapters = info_dict.get('chapters', [])
+            if chapters:
+                metadata['chapters'] = [
+                    {
+                        'title': ch.get('title', ''),
+                        'start': ch.get('start_time', 0),
+                        'end': ch.get('end_time', 0)
+                    }
+                    for ch in chapters
+                ]
+            else:
+                metadata['chapters'] = []
 
             if 'requested_downloads' in info_dict and info_dict['requested_downloads']:
                 filepath = info_dict['requested_downloads'][0].get('filepath', '')
