@@ -89,7 +89,7 @@ class MediaPlayer(QMainWindow):
                 '--network-caching=1000'
             ]
 
-            if 'VLC_PLUGIN_PATH' not in os.environ:
+            if sys.platform == 'linux' and 'VLC_PLUGIN_PATH' not in os.environ:
                 print("VLC_PLUGIN_PATH not found. ")
                 plugin_path = find_vlc_plugin_path()
                 if plugin_path:
@@ -454,10 +454,31 @@ class MediaPlayer(QMainWindow):
         except Exception as e:
             print(f"Error saving progress: {e}")
 
-    def jump_to_chapter(self, start_time_seconds):
-        if self.vlc_player.get_media():
-            self.set_position(int(start_time_seconds * 1000))
-            self.status_bar.showMessage(f"Jumped to {self.format_time(start_time_seconds * 1000)}", 2000)
+    def jump_to_chapter(self, chapter_time):
+        if not self.vlc_player.get_media():
+            return
+
+        media_duration = self.vlc_player.get_length()
+        if media_duration <= 0:
+            return
+
+        chapter_time_ms = int(chapter_time * 1000)
+        chapter_time_ms = max(0, min(chapter_time_ms, media_duration))
+
+        state = self.vlc_player.get_state()
+        if state in (vlc.State.Error, vlc.State.Stopped, vlc.State.Ended):
+            return
+
+        was_playing = (state == vlc.State.Playing)
+        if was_playing:
+            self.vlc_player.pause()
+
+        self.vlc_player.set_time(chapter_time_ms)
+
+        if was_playing:
+            QTimer.singleShot(100, self.vlc_player.play)
+
+        self.status_bar.showMessage(f"Jumped to {self.format_time(chapter_time_ms)}", 5000)
 
     def open_file(self):
         try:

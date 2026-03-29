@@ -415,9 +415,9 @@ class RightSidebar(QWidget):
             self.chapters_list.hide()
 
     def on_chapter_clicked(self, item):
-        start_time = item.data(Qt.ItemDataRole.UserRole)
-        if start_time is not None:
-            self.chapter_selected.emit(float(start_time))
+        chapter_time = item.data(Qt.ItemDataRole.UserRole)
+        if chapter_time is not None:
+            self.chapter_selected.emit(float(chapter_time))
 
     def clear_chapters(self):
         self.chapters_list.clear()
