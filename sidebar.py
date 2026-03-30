@@ -396,9 +396,12 @@ class RightSidebar(QWidget):
                         start = float(start)
                     except (TypeError, ValueError):
                         start = 0
-                    minutes = int(start // 60)
-                    seconds = int(start % 60)
-                    time_str = f"{minutes:02d}:{seconds:02d}"
+
+                    total_seconds = int(start)
+                    hours = total_seconds // 3600
+                    minutes = (total_seconds % 3600) // 60
+                    seconds = total_seconds % 60
+                    time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
                     item_text = f"{time_str} - {title}"
                     item = QListWidgetItem(item_text)
                     item.setData(Qt.ItemDataRole.UserRole, start)
