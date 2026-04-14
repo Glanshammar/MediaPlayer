@@ -837,7 +837,7 @@ class MediaPlayer(QMainWindow):
             self.toggle_mute()
         elif key == Qt.Key.Key_0:  # Reset to beginning
             self.set_position(0)
-        elif key == Qt.Key.Key_Home:  # Beginning
+        elif key == Qt.Key.Key_Home:  # Reset to beginning
             self.set_position(0)
         elif key == Qt.Key.Key_End:  # End
             if hasattr(self, 'vlc_player') and self.vlc_player.get_media():
@@ -978,7 +978,6 @@ class MediaPlayer(QMainWindow):
                         if not track_name:
                             track_name = f"Subtitle Track {len(self.subtitle_tracks) + 1}"
                     else:
-                        # If it's already a string (shouldn't happen but just in case)
                         track_name = str(track_name_bytes)
 
                     self.subtitle_tracks.append((track_id, track_name))
@@ -1032,7 +1031,6 @@ class MediaPlayer(QMainWindow):
                 else:
                     QMessageBox.warning(self, "Subtitle Error",
                                         "Failed to load subtitle file. The file might be corrupted or in an unsupported format.")
-
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load subtitle file:\n{str(e)}")
 
