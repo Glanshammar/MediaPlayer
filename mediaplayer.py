@@ -145,7 +145,7 @@ class MediaPlayer(QMainWindow):
         self.controls_layout.addWidget(self.stop_button)
 
         self.position_slider = QSlider(Qt.Orientation.Horizontal)
-        self.position_slider.setRange(0, 0)
+        self.position_slider.setRange(0, 100)
         self.position_slider.sliderPressed.connect(self.position_slider_pressed)
         self.position_slider.sliderReleased.connect(self.position_slider_released)
         self.controls_layout.addWidget(self.position_slider)
