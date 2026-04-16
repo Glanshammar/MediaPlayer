@@ -650,7 +650,6 @@ class MediaPlayer(QMainWindow):
         try:
             if not self.metadata_dir.exists():
                 return
-
             for json_file in self.metadata_dir.glob("*.json"):
                 try:
                     with open(json_file, 'r', encoding='utf-8') as f:

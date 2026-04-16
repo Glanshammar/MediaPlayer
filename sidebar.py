@@ -12,6 +12,7 @@ import os
 class VideoItemWidget(QWidget):
     add_to_playlist_requested = pyqtSignal(dict)   # video_data
     delete_video_requested = pyqtSignal(dict)      # video_data
+    play_clicked = pyqtSignal(dict)                # RESTORED signal for double-click
 
     def __init__(self, video_data, parent=None):
         super().__init__(parent)
@@ -122,8 +123,7 @@ class VideoItemWidget(QWidget):
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            # Double-click triggers play (handled by parent)
-            self.parent().parent().play_clicked.emit(self.video_data) if self.parent() else None
+            self.play_clicked.emit(self.video_data)
         super().mouseDoubleClickEvent(event)
 
 
@@ -137,7 +137,7 @@ class VideoSidebar(QWidget):
         self.setFixedWidth(420)
 
         self.playlists_file = None
-        self.playlists = [] # list of {"name": str, "videos": [video_id, ...]}
+        self.playlists = []  # list of {"name": str, "videos": [video_id, ...]}
         self.current_playlist = "All Videos"
 
         layout = QVBoxLayout(self)
@@ -213,6 +213,7 @@ class VideoSidebar(QWidget):
         self.playlists_file = self.metadata_dir / "playlists.json"
         self.load_playlists()
 
+    # ---------- Playlist management ----------
     def load_playlists(self):
         if not self.playlists_file or not self.playlists_file.exists():
             self.playlists = []
@@ -315,6 +316,7 @@ class VideoSidebar(QWidget):
             if self.current_playlist != "All Videos":
                 self.refresh_video_list()
 
+    # ---------- Video list refresh and playback ----------
     def refresh_video_list(self):
         self.video_list.clear()
 
@@ -365,6 +367,7 @@ class VideoSidebar(QWidget):
 
         for video_data, _ in all_videos:
             item_widget = VideoItemWidget(video_data)
+            item_widget.play_clicked.connect(self.on_video_play_clicked)          # RESTORED
             item_widget.add_to_playlist_requested.connect(self.on_add_to_playlist_requested)
             item_widget.delete_video_requested.connect(self.delete_video_dialog)
 
@@ -376,6 +379,11 @@ class VideoSidebar(QWidget):
         if self.video_list.count() == 0:
             self.info_label.setText("No videos in this playlist")
             self.info_label.show()
+
+    def on_video_play_clicked(self, video_data):
+        video_path = video_data.get('video_path')
+        if video_path:
+            self.video_selected.emit(video_path)
 
     def on_add_to_playlist_requested(self, video_data):
         self.add_video_to_playlist(video_data)
