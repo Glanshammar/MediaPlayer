@@ -12,7 +12,7 @@ import os
 class VideoItemWidget(QWidget):
     add_to_playlist_requested = pyqtSignal(dict)   # video_data
     delete_video_requested = pyqtSignal(dict)      # video_data
-    play_clicked = pyqtSignal(dict)                # RESTORED signal for double-click
+    play_clicked = pyqtSignal(dict)                # double-click
 
     def __init__(self, video_data, parent=None):
         super().__init__(parent)
@@ -22,7 +22,6 @@ class VideoItemWidget(QWidget):
         layout.setContentsMargins(5, 5, 5, 5)
         layout.setSpacing(8)
 
-        # Thumbnail
         self.thumbnail_label = QLabel()
         self.thumbnail_label.setFixedSize(60, 40)
         self.thumbnail_label.setStyleSheet("""
@@ -34,7 +33,6 @@ class VideoItemWidget(QWidget):
         """)
         layout.addWidget(self.thumbnail_label)
 
-        # Text area (title + details)
         text_widget = QWidget()
         text_layout = QVBoxLayout(text_widget)
         text_layout.setContentsMargins(0, 0, 0, 0)
@@ -85,7 +83,12 @@ class VideoItemWidget(QWidget):
     def update_display(self):
         title = self.video_data.get('title', 'Unknown Title')
         uploader = self.video_data.get('uploader', 'Unknown Uploader')
-        duration = self.video_data.get('duration', 0)
+        raw_duration = self.video_data.get('duration', 0)
+
+        try:
+            duration = int(raw_duration) if raw_duration is not None else 0
+        except (TypeError, ValueError):
+            duration = 0
 
         if duration:
             minutes = duration // 60
