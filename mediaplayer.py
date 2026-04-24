@@ -30,7 +30,12 @@ import os
 import json
 import time
 
-time_start : str = "00:00 / 00:00"
+if getattr(sys, 'frozen', False):
+    # Running as compiled executable
+    build_folder = Path(sys.executable).parent
+else:
+    # Running as normal Python script
+    build_folder = Path(__file__).parent
 
 class MediaPlayer(QMainWindow):
     def __init__(self) -> None:
@@ -42,7 +47,7 @@ class MediaPlayer(QMainWindow):
         self.resize(width, height)
 
         self.setWindowTitle("Media Player")
-        self.setWindowIcon(QIcon("app_icon.png"))
+        self.setWindowIcon(QIcon(os.path.join(build_folder, "app_icon.png")))
 
         x = screen_geometry.x() + (screen_geometry.width() - width) // 2
         y = screen_geometry.y() + (screen_geometry.height() - height) // 2
@@ -150,7 +155,7 @@ class MediaPlayer(QMainWindow):
         self.position_slider.sliderReleased.connect(self.position_slider_released)
         self.controls_layout.addWidget(self.position_slider)
 
-        self.position_label = QLabel(time_start)
+        self.position_label = QLabel("00:00 / 00:00")
         self.controls_layout.addWidget(self.position_label)
 
         volume_layout = QHBoxLayout()
@@ -316,11 +321,11 @@ class MediaPlayer(QMainWindow):
         self.sidebar_toolbar_action.triggered.connect(self.toggle_sidebar)
         self.toolbar.addAction(self.sidebar_toolbar_action)
 
-        download_action_video = QAction(QIcon("download_video.png"), "Download Video", self)
+        download_action_video = QAction(QIcon(os.path.join(build_folder, "download_video.png")), "Download Video", self)
         download_action_video.triggered.connect(lambda checked, fmt="video": self.download_video(fmt))
         self.toolbar.addAction(download_action_video)
 
-        download_action_audio = QAction(QIcon("download_audio.png"), "Download Audio", self)
+        download_action_audio = QAction(QIcon(os.path.join(build_folder, "download_audio.png")), "Download Audio", self)
         download_action_audio.triggered.connect(lambda checked, fmt="audio": self.download_video(fmt))
         self.toolbar.addAction(download_action_audio)
 
@@ -697,7 +702,7 @@ class MediaPlayer(QMainWindow):
         if self.vlc_player.get_media():
             self.vlc_player.stop()
             self.position_slider.setValue(0)
-            self.position_label.setText(time_start)
+            self.position_label.setText("00:00 / 00:00")
             self.is_playing = False
             self.save_current_time_progress()
 

@@ -1,6 +1,5 @@
 import os
 import subprocess
-import ctypes.util
 
 def find_vlc_plugin_path():
     candidates = [

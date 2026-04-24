@@ -8,6 +8,15 @@ from PyQt6.QtWidgets import (
 from pathlib import Path
 import json
 import os
+import sys
+
+if getattr(sys, 'frozen', False):
+    # Running as compiled executable
+    build_folder = Path(sys.executable).parent
+else:
+    # Running as normal Python script
+    build_folder = Path(__file__).parent
+
 
 class VideoItemWidget(QWidget):
     add_to_playlist_requested = pyqtSignal(dict)   # video_data
@@ -479,7 +488,7 @@ class RightSidebar(QWidget):
 
         # Toggle button (icon only)
         self.toggle_button = QPushButton()
-        self.toggle_button.setIcon(QIcon("chapters.png"))
+        self.toggle_button.setIcon(QIcon(os.path.join(build_folder, "chapters.png")))
         self.toggle_button.setToolTip("Show/Hide Chapters")
         self.toggle_button.setFixedSize(40, 40)
         self.toggle_button.clicked.connect(self.toggle_expand)
